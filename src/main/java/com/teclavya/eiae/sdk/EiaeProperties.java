@@ -11,6 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * <pre>
  * eiae:
  *   api-base: http://eiae-platform-service:8089
+ *   enforce-entitlements: true
  *   local-override: false
  *   cache-ttl-seconds: 60
  *   internal-token: ${EIAE_INTERNAL_TOKEN}
@@ -25,6 +26,15 @@ public class EiaeProperties {
      * Default: http://eiae-platform-service:8089 (K8s internal DNS)
      */
     private String apiBase = "http://eiae-platform-service:8089";
+
+    /**
+     * Preferred property alias for rollout clarity.
+     *
+     * <p>When set, this takes precedence over {@code localOverride} and is
+     * interpreted as the inverse of local override behavior:
+     * {@code enforceEntitlements=true => localOverride=false}.
+     */
+    private Boolean enforceEntitlements;
 
     /**
      * When true, all {@code has()} calls return {@code true} and all
@@ -44,4 +54,15 @@ public class EiaeProperties {
      * SDK-to-EIAE calls. Set via env var {@code EIAE_INTERNAL_TOKEN}.
      */
     private String internalToken;
+
+    /**
+     * Effective local override. If {@code enforceEntitlements} is explicitly
+     * configured, it wins and is inverted to preserve backward compatibility.
+     */
+    public boolean isLocalOverride() {
+        if (enforceEntitlements != null) {
+            return !enforceEntitlements;
+        }
+        return localOverride;
+    }
 }
