@@ -87,6 +87,39 @@ class EntitlementServiceImplTest {
     }
 
     @Test
+    @DisplayName("enforceEntitlements=true overrides localOverride and enforces HTTP path")
+    @SuppressWarnings("unchecked")
+    void enforceEntitlementsTrue_overridesLocalOverride() {
+        properties.setLocalOverride(true);
+        properties.setEnforceEntitlements(true);
+        EntitlementServiceImpl service = new EntitlementServiceImpl(properties, restClient);
+        EntitlementsSnapshot snapshot = buildSnapshot(List.of());
+
+        doReturn(getSpec).when(restClient).get();
+        doReturn(getSpec).when(getSpec).uri(anyString(), anyString());
+        doReturn(getResponseSpec).when((RestClient.RequestHeadersSpec<?>) getSpec).retrieve();
+        doReturn(snapshot).when(getResponseSpec).body(EntitlementsSnapshot.class);
+
+        boolean result = service.has("user-1", "mock_interviews");
+
+        assertThat(result).isFalse();
+        verify(restClient, times(1)).get();
+    }
+
+    @Test
+    @DisplayName("enforceEntitlements=false short-circuits even when localOverride=false")
+    void enforceEntitlementsFalse_shortCircuits() {
+        properties.setLocalOverride(false);
+        properties.setEnforceEntitlements(false);
+        EntitlementServiceImpl service = new EntitlementServiceImpl(properties, restClient);
+
+        boolean result = service.has("user-1", "mock_interviews");
+
+        assertThat(result).isTrue();
+        verifyNoInteractions(restClient);
+    }
+
+    @Test
     @DisplayName("has() returns true when feature is in snapshot")
     @SuppressWarnings("unchecked")
     void has_featurePresent_returnsTrue() {
