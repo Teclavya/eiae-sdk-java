@@ -4,23 +4,30 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.client.RestClient;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
+/**
+ * Unit tests for {@link EntitlementServiceImpl}'s {@code has()}/{@code getSnapshot}/cache
+ * behavior (Mockito fluent-mock style against the SDK's own {@link RestClient} usage).
+ *
+ * <p>HTTP-contract tests for {@code consumeQuota} (path, headers, body, status mapping,
+ * fail-open behavior) live in {@link EntitlementServiceImplConsumeQuotaContractTest},
+ * which exercises a real {@link RestClient} bound to a {@code MockRestServiceServer} so
+ * the exact wire contract (URI, X-Internal-Token, no Authorization header, request body
+ * shape) is verified end-to-end rather than through mocked fluent-builder plumbing.
+ */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("EntitlementServiceImpl")
+@DisplayName("EntitlementServiceImpl — has()/getSnapshot/cache")
 class EntitlementServiceImplTest {
 
     @Mock
@@ -30,16 +37,7 @@ class EntitlementServiceImplTest {
     private RestClient.RequestHeadersUriSpec<?> getSpec;
 
     @Mock
-    private RestClient.RequestBodyUriSpec postSpec;
-
-    @Mock
-    private RestClient.RequestBodySpec requestBodySpec;
-
-    @Mock
     private RestClient.ResponseSpec getResponseSpec;
-
-    @Mock
-    private RestClient.ResponseSpec postResponseSpec;
 
     private EiaeProperties properties;
 
@@ -52,13 +50,11 @@ class EntitlementServiceImplTest {
     }
 
     @SuppressWarnings("unchecked")
-    private EntitlementsSnapshot buildSnapshot(List<String> features) {
-        return new EntitlementsSnapshot(
-                features,
-                Map.of("mock_interviews", new EntitlementsSnapshot.QuotaInfo(2, 10, Instant.now().plusSeconds(3600))),
-                List.of(),
-                Instant.now()
-        );
+    private EiaeEntitlementsResponse buildResponse(List<String> features) {
+        return new EiaeEntitlementsResponse(
+                Set.copyOf(features),
+                Map.of("mock_interviews", new EiaeEntitlementsResponse.EiaeQuotaState(2, 10, "2026-07")),
+                List.of());
     }
 
     @Test
@@ -93,12 +89,12 @@ class EntitlementServiceImplTest {
         properties.setLocalOverride(true);
         properties.setEnforceEntitlements(true);
         EntitlementServiceImpl service = new EntitlementServiceImpl(properties, restClient);
-        EntitlementsSnapshot snapshot = buildSnapshot(List.of());
+        EiaeEntitlementsResponse response = buildResponse(List.of());
 
         doReturn(getSpec).when(restClient).get();
         doReturn(getSpec).when(getSpec).uri(anyString(), anyString());
         doReturn(getResponseSpec).when((RestClient.RequestHeadersSpec<?>) getSpec).retrieve();
-        doReturn(snapshot).when(getResponseSpec).body(EntitlementsSnapshot.class);
+        doReturn(response).when(getResponseSpec).body(EiaeEntitlementsResponse.class);
 
         boolean result = service.has("user-1", "mock_interviews");
 
@@ -124,12 +120,12 @@ class EntitlementServiceImplTest {
     @SuppressWarnings("unchecked")
     void has_featurePresent_returnsTrue() {
         EntitlementServiceImpl service = new EntitlementServiceImpl(properties, restClient);
-        EntitlementsSnapshot snapshot = buildSnapshot(List.of("mock_interviews", "ai_resume"));
+        EiaeEntitlementsResponse response = buildResponse(List.of("mock_interviews", "ai_resume"));
 
         doReturn(getSpec).when(restClient).get();
         doReturn(getSpec).when(getSpec).uri(anyString(), anyString());
         doReturn(getResponseSpec).when((RestClient.RequestHeadersSpec<?>) getSpec).retrieve();
-        doReturn(snapshot).when(getResponseSpec).body(EntitlementsSnapshot.class);
+        doReturn(response).when(getResponseSpec).body(EiaeEntitlementsResponse.class);
 
         boolean result = service.has("user-1", "mock_interviews");
 
@@ -141,12 +137,12 @@ class EntitlementServiceImplTest {
     @SuppressWarnings("unchecked")
     void has_featureAbsent_returnsFalse() {
         EntitlementServiceImpl service = new EntitlementServiceImpl(properties, restClient);
-        EntitlementsSnapshot snapshot = buildSnapshot(List.of("ai_resume"));
+        EiaeEntitlementsResponse response = buildResponse(List.of("ai_resume"));
 
         doReturn(getSpec).when(restClient).get();
         doReturn(getSpec).when(getSpec).uri(anyString(), anyString());
         doReturn(getResponseSpec).when((RestClient.RequestHeadersSpec<?>) getSpec).retrieve();
-        doReturn(snapshot).when(getResponseSpec).body(EntitlementsSnapshot.class);
+        doReturn(response).when(getResponseSpec).body(EiaeEntitlementsResponse.class);
 
         boolean result = service.has("user-1", "mock_interviews");
 
@@ -158,12 +154,12 @@ class EntitlementServiceImplTest {
     @SuppressWarnings("unchecked")
     void cacheHit_secondCallNoHttpRequest() {
         EntitlementServiceImpl service = new EntitlementServiceImpl(properties, restClient);
-        EntitlementsSnapshot snapshot = buildSnapshot(List.of("mock_interviews"));
+        EiaeEntitlementsResponse response = buildResponse(List.of("mock_interviews"));
 
         doReturn(getSpec).when(restClient).get();
         doReturn(getSpec).when(getSpec).uri(anyString(), anyString());
         doReturn(getResponseSpec).when((RestClient.RequestHeadersSpec<?>) getSpec).retrieve();
-        doReturn(snapshot).when(getResponseSpec).body(EntitlementsSnapshot.class);
+        doReturn(response).when(getResponseSpec).body(EiaeEntitlementsResponse.class);
 
         service.has("user-1", "mock_interviews");
         service.has("user-1", "mock_interviews");
@@ -177,12 +173,12 @@ class EntitlementServiceImplTest {
     @SuppressWarnings("unchecked")
     void invalidateCache_causesRefetch() {
         EntitlementServiceImpl service = new EntitlementServiceImpl(properties, restClient);
-        EntitlementsSnapshot snapshot = buildSnapshot(List.of("mock_interviews"));
+        EiaeEntitlementsResponse response = buildResponse(List.of("mock_interviews"));
 
         doReturn(getSpec).when(restClient).get();
         doReturn(getSpec).when(getSpec).uri(anyString(), anyString());
         doReturn(getResponseSpec).when((RestClient.RequestHeadersSpec<?>) getSpec).retrieve();
-        doReturn(snapshot).when(getResponseSpec).body(EntitlementsSnapshot.class);
+        doReturn(response).when(getResponseSpec).body(EiaeEntitlementsResponse.class);
 
         service.has("user-1", "mock_interviews");
         service.invalidateCache("user-1");
@@ -193,7 +189,7 @@ class EntitlementServiceImplTest {
     }
 
     @Test
-    @DisplayName("has() returns false when EIAE is unreachable (fail-safe)")
+    @DisplayName("has() returns false when EIAE is unreachable (fail-safe empty snapshot)")
     @SuppressWarnings("unchecked")
     void has_eiaeUnreachable_returnsFalse() {
         EntitlementServiceImpl service = new EntitlementServiceImpl(properties, restClient);
@@ -201,7 +197,7 @@ class EntitlementServiceImplTest {
         doReturn(getSpec).when(restClient).get();
         doReturn(getSpec).when(getSpec).uri(anyString(), anyString());
         doReturn(getResponseSpec).when((RestClient.RequestHeadersSpec<?>) getSpec).retrieve();
-        doThrow(new RuntimeException("Connection refused")).when(getResponseSpec).body(EntitlementsSnapshot.class);
+        doThrow(new RuntimeException("Connection refused")).when(getResponseSpec).body(EiaeEntitlementsResponse.class);
 
         boolean result = service.has("user-1", "mock_interviews");
 
@@ -209,48 +205,28 @@ class EntitlementServiceImplTest {
     }
 
     @Test
-    @DisplayName("consumeQuota returns DENIED when EIAE returns DENIED")
-    @SuppressWarnings("unchecked")
-    void consumeQuota_denied() {
+    @DisplayName("consumeQuota: non-UUID userId fails OPEN when failOpenOnError=true (default)")
+    void consumeQuota_nonUuidUserId_failOpenDefault() {
         EntitlementServiceImpl service = new EntitlementServiceImpl(properties, restClient);
-        QuotaResult denied = new QuotaResult(QuotaResult.DENIED, 10, 10, Instant.now().plusSeconds(3600));
 
-        doReturn(postSpec).when(restClient).post();
-        doReturn(requestBodySpec).when(postSpec).uri(anyString());
-        doReturn(requestBodySpec).when(requestBodySpec).header(anyString(), anyString());
-        doReturn(requestBodySpec).when(requestBodySpec).body(any());
-        doReturn(postResponseSpec).when(requestBodySpec).retrieve();
-        doReturn(denied).when(postResponseSpec).body(QuotaResult.class);
+        QuotaResult result = service.consumeQuota("not-a-uuid", "mock_interviews", 1, "key-abc");
 
-        // Stub get for invalidateCache triggered inside consumeQuota
-        doReturn(getSpec).when(restClient).get();
-        doReturn(getSpec).when(getSpec).uri(anyString(), anyString());
-        doReturn(getResponseSpec).when((RestClient.RequestHeadersSpec<?>) getSpec).retrieve();
-        doReturn(buildSnapshot(List.of())).when(getResponseSpec).body(EntitlementsSnapshot.class);
-
-        QuotaResult result = service.consumeQuota("user-1", "mock_interviews", 1, "key-abc");
-
-        assertThat(result.isAllowed()).isFalse();
-        assertThat(result.outcome()).isEqualTo(QuotaResult.DENIED);
+        assertThat(result.isAllowed()).isTrue();
+        assertThat(result.outcome()).isEqualTo(QuotaResult.ALLOWED);
+        verifyNoInteractions(restClient);
     }
 
     @Test
-    @DisplayName("consumeQuota returns DENIED when EIAE is unreachable (fail-safe)")
-    @SuppressWarnings("unchecked")
-    void consumeQuota_eiaeUnreachable_returnsDenied() {
+    @DisplayName("consumeQuota: non-UUID userId fails CLOSED when failOpenOnError=false")
+    void consumeQuota_nonUuidUserId_failClosedWhenConfigured() {
+        properties.setFailOpenOnError(false);
         EntitlementServiceImpl service = new EntitlementServiceImpl(properties, restClient);
 
-        doReturn(postSpec).when(restClient).post();
-        doReturn(requestBodySpec).when(postSpec).uri(anyString());
-        doReturn(requestBodySpec).when(requestBodySpec).header(anyString(), anyString());
-        doReturn(requestBodySpec).when(requestBodySpec).body(any());
-        doReturn(postResponseSpec).when(requestBodySpec).retrieve();
-        doThrow(new RuntimeException("Connection refused")).when(postResponseSpec).body(QuotaResult.class);
-
-        QuotaResult result = service.consumeQuota("user-1", "mock_interviews", 1, "key-abc");
+        QuotaResult result = service.consumeQuota("not-a-uuid", "mock_interviews", 1, "key-abc");
 
         assertThat(result.isAllowed()).isFalse();
         assertThat(result.outcome()).isEqualTo(QuotaResult.DENIED);
+        verifyNoInteractions(restClient);
     }
 
     @Test
@@ -262,7 +238,7 @@ class EntitlementServiceImplTest {
         doReturn(getSpec).when(restClient).get();
         doReturn(getSpec).when(getSpec).uri(anyString(), anyString());
         doReturn(getResponseSpec).when((RestClient.RequestHeadersSpec<?>) getSpec).retrieve();
-        doReturn(null).when(getResponseSpec).body(EntitlementsSnapshot.class);
+        doReturn(null).when(getResponseSpec).body(EiaeEntitlementsResponse.class);
 
         EntitlementsSnapshot snapshot = service.getSnapshot("user-1");
 

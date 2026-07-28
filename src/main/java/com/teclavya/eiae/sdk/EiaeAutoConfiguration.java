@@ -42,15 +42,17 @@ public class EiaeAutoConfiguration {
     @Bean
     @ConditionalOnClass(name = "org.aspectj.lang.annotation.Aspect")
     @ConditionalOnMissingBean
-    public RequiresEntitlementAspect requiresEntitlementAspect(EntitlementService entitlementService) {
-        return new RequiresEntitlementAspect(entitlementService);
+    public RequiresEntitlementAspect requiresEntitlementAspect(
+            EntitlementService entitlementService, EiaeProperties properties) {
+        return new RequiresEntitlementAspect(entitlementService, properties);
     }
 
     @Bean
     @ConditionalOnClass(name = "org.aspectj.lang.annotation.Aspect")
     @ConditionalOnMissingBean
-    public RequiresQuotaAspect requiresQuotaAspect(EntitlementService entitlementService) {
-        return new RequiresQuotaAspect(entitlementService);
+    public RequiresQuotaAspect requiresQuotaAspect(
+            EntitlementService entitlementService, EiaeProperties properties) {
+        return new RequiresQuotaAspect(entitlementService, properties);
     }
 
     /**

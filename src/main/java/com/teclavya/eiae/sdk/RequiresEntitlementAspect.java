@@ -5,8 +5,6 @@ import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * AOP aspect that enforces {@link RequiresEntitlement} on annotated methods.
@@ -23,9 +21,19 @@ public class RequiresEntitlementAspect {
     private static final Logger log = LoggerFactory.getLogger(RequiresEntitlementAspect.class);
 
     private final EntitlementService entitlementService;
+    private final EiaeProperties properties;
 
-    public RequiresEntitlementAspect(EntitlementService entitlementService) {
+    public RequiresEntitlementAspect(EntitlementService entitlementService, EiaeProperties properties) {
         this.entitlementService = entitlementService;
+        this.properties = properties;
+    }
+
+    /**
+     * Backward-compatible constructor (pre-1.1.0). Resolves the user id using
+     * default {@link EiaeProperties} (attribute name {@code "userId"}).
+     */
+    public RequiresEntitlementAspect(EntitlementService entitlementService) {
+        this(entitlementService, new EiaeProperties());
     }
 
     /**
@@ -60,10 +68,6 @@ public class RequiresEntitlementAspect {
      * Falls back to {@code "anonymous"} if no authentication is present.
      */
     protected String resolveUserId() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated()) {
-            return "anonymous";
-        }
-        return auth.getName();
+        return EiaeUserIdResolver.resolveUserId(properties);
     }
 }

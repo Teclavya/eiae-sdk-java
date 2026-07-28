@@ -56,6 +56,26 @@ public class EiaeProperties {
     private String internalToken;
 
     /**
+     * Name of the HTTP request attribute holding the platform's UUID for the
+     * current user, stashed by the consuming service's own auth filter (e.g.
+     * {@code request.setAttribute("userId", <uuid>)}). Used by
+     * {@link RequiresQuotaAspect} / {@link RequiresEntitlementAspect} to resolve
+     * the EIAE-recognized user identifier — the Spring Security principal name
+     * ({@code auth.getName()}) is frequently the user's email, not a UUID.
+     * Default: {@code "userId"}.
+     */
+    private String userIdRequestAttribute = "userId";
+
+    /**
+     * When {@code true} (default), an EIAE error (5xx, timeout, connection
+     * failure, or any non-402 non-2xx status) is treated as fail-OPEN — the SDK
+     * returns ALLOWED rather than blocking the caller. Only an authoritative
+     * 402 DENIED response fails closed. Set to {@code false} to fail-closed on
+     * any EIAE error instead.
+     */
+    private boolean failOpenOnError = true;
+
+    /**
      * Effective local override. If {@code enforceEntitlements} is explicitly
      * configured, it wins and is inverted to preserve backward compatibility.
      */

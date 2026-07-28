@@ -6,8 +6,6 @@ import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -31,9 +29,19 @@ public class RequiresQuotaAspect {
     private static final Logger log = LoggerFactory.getLogger(RequiresQuotaAspect.class);
 
     private final EntitlementService entitlementService;
+    private final EiaeProperties properties;
 
-    public RequiresQuotaAspect(EntitlementService entitlementService) {
+    public RequiresQuotaAspect(EntitlementService entitlementService, EiaeProperties properties) {
         this.entitlementService = entitlementService;
+        this.properties = properties;
+    }
+
+    /**
+     * Backward-compatible constructor (pre-1.1.0). Resolves the user id using
+     * default {@link EiaeProperties} (attribute name {@code "userId"}).
+     */
+    public RequiresQuotaAspect(EntitlementService entitlementService) {
+        this(entitlementService, new EiaeProperties());
     }
 
     /**
@@ -71,11 +79,7 @@ public class RequiresQuotaAspect {
     // -------------------------------------------------------------------------
 
     protected String resolveUserId() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated()) {
-            return "anonymous";
-        }
-        return auth.getName();
+        return EiaeUserIdResolver.resolveUserId(properties);
     }
 
     protected String resolveIdempotencyKey(String headerName) {
