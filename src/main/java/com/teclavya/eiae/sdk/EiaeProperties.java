@@ -75,6 +75,20 @@ public class EiaeProperties {
      */
     private boolean failOpenOnError = true;
 
+    public void setEnforceEntitlements(Boolean enforceEntitlements) {
+        this.enforceEntitlements = enforceEntitlements;
+        if (enforceEntitlements != null) {
+            this.localOverride = !enforceEntitlements;
+        }
+    }
+
+    public Boolean getEnforceEntitlements() {
+        if (enforceEntitlements != null) {
+            return enforceEntitlements;
+        }
+        return !localOverride;
+    }
+
     /**
      * Effective local override. If {@code enforceEntitlements} is explicitly
      * configured, it wins and is inverted to preserve backward compatibility.
@@ -84,5 +98,9 @@ public class EiaeProperties {
             return !enforceEntitlements;
         }
         return localOverride;
+    }
+
+    public void setLocalOverride(boolean localOverride) {
+        this.localOverride = localOverride;
     }
 }
