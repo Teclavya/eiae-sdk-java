@@ -98,6 +98,54 @@ class RequiresQuotaAspectTest {
                 .hasMessageContaining("user-quota-test");
     }
 
+    @Test
+    @DisplayName("REQ-03/REQ-04: Refunds quota on provider-side failure without masking original exception")
+    void refundsQuotaOnProviderFailure() {
+        QuotaResult allowed = new QuotaResult(QuotaResult.ALLOWED, 1, 10, Instant.now().plusSeconds(3600));
+        when(entitlementService.consumeQuota(eq("user-quota-test"), eq("learning_path.propose_template"), eq(1), anyString()))
+                .thenReturn(allowed);
+        when(entitlementService.refundQuota(eq("user-quota-test"), eq("learning_path.propose_template"), eq(1), anyString()))
+                .thenThrow(new RuntimeException("refund network error"));
+
+        assertThatThrownBy(() -> proxy.failingProviderCall())
+                .isInstanceOf(QuotaRefundableException.class)
+                .hasMessageContaining("AI_PROVIDERS_UNAVAILABLE");
+
+        verify(entitlementService).refundQuota(eq("user-quota-test"), eq("learning_path.propose_template"), eq(1), eq("test-idempotency-key"));
+    }
+
+    @Test
+    @DisplayName("REQ-05: Does NOT refund quota on client 4xx validation error")
+    void doesNotRefundOnClientError() {
+        QuotaResult allowed = new QuotaResult(QuotaResult.ALLOWED, 1, 10, Instant.now().plusSeconds(3600));
+        when(entitlementService.consumeQuota(eq("user-quota-test"), eq("mock_interviews"), eq(1), anyString()))
+                .thenReturn(allowed);
+
+        assertThatThrownBy(() -> proxy.clientValidationError())
+                .isInstanceOf(IllegalArgumentException.class);
+
+        verify(entitlementService, never()).refundQuota(anyString(), anyString(), anyInt(), anyString());
+    }
+
+    @Test
+    @DisplayName("REQ-03: Refunds quota on 5xx ResponseStatusException and HttpServerErrorException, skips 4xx ResponseStatusException")
+    void refundsOn5xxResponseStatusAndHttpServerError() {
+        QuotaResult allowed = new QuotaResult(QuotaResult.ALLOWED, 1, 10, Instant.now().plusSeconds(3600));
+        when(entitlementService.consumeQuota(anyString(), anyString(), anyInt(), anyString())).thenReturn(allowed);
+
+        assertThatThrownBy(() -> proxy.failingResponseStatus503())
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        verify(entitlementService, times(1)).refundQuota("user-quota-test", "learning_path.propose_template", 1, "test-idempotency-key");
+
+        assertThatThrownBy(() -> proxy.failingHttp503())
+                .isInstanceOf(org.springframework.web.client.HttpServerErrorException.class);
+        verify(entitlementService, times(2)).refundQuota("user-quota-test", "learning_path.propose_template", 1, "test-idempotency-key");
+
+        assertThatThrownBy(() -> proxy.failingResponseStatus400())
+                .isInstanceOf(org.springframework.web.server.ResponseStatusException.class);
+        verify(entitlementService, times(2)).refundQuota(anyString(), anyString(), anyInt(), anyString());
+    }
+
     // -------------------------------------------------------------------------
     // Sample service for proxy testing
     // -------------------------------------------------------------------------
@@ -111,6 +159,34 @@ class RequiresQuotaAspectTest {
         @RequiresQuota(value = "ai_resume_credits", amount = 5)
         public String bulkAction() {
             return "bulk-done";
+        }
+
+        @RequiresQuota(value = "learning_path.propose_template", amount = 1)
+        public String failingProviderCall() {
+            throw new QuotaRefundableException("503 AI_PROVIDERS_UNAVAILABLE");
+        }
+
+        @RequiresQuota(value = "mock_interviews", amount = 1)
+        public String clientValidationError() {
+            throw new IllegalArgumentException("bad input");
+        }
+
+        @RequiresQuota(value = "learning_path.propose_template", amount = 1)
+        public String failingResponseStatus503() {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "AI_PROVIDERS_UNAVAILABLE");
+        }
+
+        @RequiresQuota(value = "learning_path.propose_template", amount = 1)
+        public String failingHttp503() {
+            throw new org.springframework.web.client.HttpServerErrorException(
+                    org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "upstream down");
+        }
+
+        @RequiresQuota(value = "learning_path.propose_template", amount = 1)
+        public String failingResponseStatus400() {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "invalid prompt");
         }
     }
 }

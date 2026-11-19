@@ -115,6 +115,48 @@ public class EntitlementServiceImpl implements EntitlementService {
     }
 
     @Override
+    public QuotaResult refundQuota(String userId, String feature, int amount, String idempotencyKey) {
+        if (properties.isLocalOverride()) {
+            log.debug("[EIAE local-override] refundQuota({}, {}) => ALLOWED", userId, feature);
+            return new QuotaResult(QuotaResult.ALLOWED, 0, Integer.MAX_VALUE, null);
+        }
+
+        UUID externalUserId;
+        try {
+            externalUserId = UUID.fromString(userId);
+        } catch (IllegalArgumentException ex) {
+            log.error("[EIAE SDK] refundQuota: userId '{}' is not a valid UUID (feature={} idem={})",
+                    userId, feature, idempotencyKey);
+            return new QuotaResult(QuotaResult.DENIED, 0, 0, null);
+        }
+
+        try {
+            QuotaResult result = restClient.post()
+                    .uri("/api/v1/quota/refund-by-external-id")
+                    .header("X-Idempotency-Key", idempotencyKey)
+                    .body(new ConsumeByExternalIdRequest(externalUserId, feature, amount, idempotencyKey))
+                    .exchange((req, res) -> {
+                        int status = res.getStatusCode().value();
+                        if (status == 200) {
+                            EiaeQuotaResponse body = res.bodyTo(EiaeQuotaResponse.class);
+                            invalidateCache(userId);
+                            return body != null
+                                    ? mapQuotaResponse(body)
+                                    : new QuotaResult(QuotaResult.ALLOWED, 0, Integer.MAX_VALUE, null);
+                        }
+                        log.error("[EIAE SDK] refundQuota: unexpected status {} from EIAE for userId={} feature={} idem={}",
+                                status, userId, feature, idempotencyKey);
+                        return new QuotaResult(QuotaResult.DENIED, 0, 0, null);
+                    });
+            return result != null ? result : new QuotaResult(QuotaResult.DENIED, 0, 0, null);
+        } catch (Exception ex) {
+            log.error("[EIAE SDK] refundQuota failed for userId={} feature={} idem={}: {}",
+                    userId, feature, idempotencyKey, ex.getMessage());
+            return new QuotaResult(QuotaResult.DENIED, 0, 0, null);
+        }
+    }
+
+    @Override
     public EntitlementsSnapshot getSnapshot(String userId) {
         return cache.get(userId, this::fetchFromEiae);
     }

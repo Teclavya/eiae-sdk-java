@@ -246,4 +246,27 @@ class EntitlementServiceImplTest {
         assertThat(snapshot.quotas()).isEmpty();
         assertThat(snapshot.sourceOrgIds()).isEmpty();
     }
+
+    @Test
+    @DisplayName("refundQuota: localOverride returns ALLOWED without HTTP call")
+    void refundQuota_localOverride_returnsAllowedWithoutHttp() {
+        properties.setLocalOverride(true);
+        EntitlementServiceImpl service = new EntitlementServiceImpl(properties, restClient);
+
+        QuotaResult result = service.refundQuota("user-1", "mock_interviews", 1, "idem-1");
+
+        assertThat(result.isAllowed()).isTrue();
+        verifyNoInteractions(restClient);
+    }
+
+    @Test
+    @DisplayName("refundQuota: non-UUID userId returns DENIED without HTTP call")
+    void refundQuota_nonUuidUserId_returnsDenied() {
+        EntitlementServiceImpl service = new EntitlementServiceImpl(properties, restClient);
+
+        QuotaResult result = service.refundQuota("not-a-uuid", "mock_interviews", 1, "idem-1");
+
+        assertThat(result.isAllowed()).isFalse();
+        verifyNoInteractions(restClient);
+    }
 }
