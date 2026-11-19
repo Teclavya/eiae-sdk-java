@@ -35,6 +35,20 @@ public interface EntitlementService {
     QuotaResult consumeQuota(String userId, String feature, int amount, String idempotencyKey);
 
     /**
+     * Best-effort compensation to refund {@code amount} units of quota for {@code feature}
+     * when a downstream provider-side failure occurs after {@link #consumeQuota}.
+     *
+     * @param userId          the authenticated user identifier
+     * @param feature         the feature quota key
+     * @param amount          units to refund (≥ 1)
+     * @param idempotencyKey  idempotency key matching the original consume attempt
+     * @return {@link QuotaResult} reflecting the updated quota state
+     */
+    default QuotaResult refundQuota(String userId, String feature, int amount, String idempotencyKey) {
+        return new QuotaResult(QuotaResult.ALLOWED, 0, Integer.MAX_VALUE, null);
+    }
+
+    /**
      * Returns the full entitlement snapshot for {@code userId}, fetching from
      * EIAE if not cached.
      *

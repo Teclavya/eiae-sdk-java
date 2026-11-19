@@ -71,7 +71,61 @@ public class RequiresQuotaAspect {
 
         log.debug("[EIAE SDK] Quota ALLOWED: userId={} feature={} newConsumed={}/{}",
                 userId, feature, result.newConsumed(), result.max());
-        return pjp.proceed();
+        try {
+            return pjp.proceed();
+        } catch (Throwable ex) {
+            if (isProviderFailure(ex)) {
+                log.warn("[EIAE SDK] Provider-side failure after quota consume; refunding: userId={} feature={} idem={} cause={}",
+                        userId, feature, idempotencyKey, ex.getClass().getSimpleName());
+                try {
+                    entitlementService.refundQuota(userId, feature, amount, idempotencyKey);
+                } catch (Exception refundEx) {
+                    log.error("[EIAE SDK] Best-effort quota refund failed for userId={} feature={} idem={}: {}",
+                            userId, feature, idempotencyKey, refundEx.getMessage());
+                }
+            }
+            throw ex;
+        }
+    }
+
+    /**
+     * Determines whether {@code ex} represents a provider-side failure eligible for
+     * quota compensation (explicit {@link QuotaRefundable}, {@code ResponseStatusException}
+     * 5xx, {@code @ResponseStatus} 5xx, or known upstream/provider failure classes).
+     * Client validation errors (4xx, {@link IllegalArgumentException}) return {@code false}.
+     */
+    protected boolean isProviderFailure(Throwable ex) {
+        java.util.Set<Throwable> visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        Throwable cursor = ex;
+        int depth = 0;
+        while (cursor != null && depth < 16 && visited.add(cursor)) {
+            if (cursor instanceof QuotaRefundable) {
+                return true;
+            }
+            if (cursor instanceof org.springframework.web.server.ResponseStatusException rse
+                    && rse.getStatusCode().is5xxServerError()) {
+                return true;
+            }
+            org.springframework.web.bind.annotation.ResponseStatus rs =
+                    cursor.getClass().getAnnotation(org.springframework.web.bind.annotation.ResponseStatus.class);
+            if (rs != null && (rs.value().is5xxServerError() || rs.code().is5xxServerError())) {
+                return true;
+            }
+            String className = cursor.getClass().getName();
+            if (className.contains("AiProvidersUnavailable")
+                    || className.contains("HttpServerErrorException")
+                    || className.contains("ServiceUnavailable")
+                    || className.contains("InternalServerError")
+                    || className.contains("BadGateway")
+                    || className.contains("GatewayTimeout")
+                    || className.contains("ResourceAccessException")
+                    || className.contains("SocketTimeoutException")) {
+                return true;
+            }
+            cursor = cursor.getCause();
+            depth++;
+        }
+        return false;
     }
 
     // -------------------------------------------------------------------------
